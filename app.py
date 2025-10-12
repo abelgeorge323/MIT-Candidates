@@ -136,6 +136,71 @@ def load_jobs_data():
 df = load_data()
 jobs_df = load_jobs_data()
 
+# ---- VERTICAL MAPPING FUNCTION ----
+def get_vertical_from_training_site(training_site):
+    """
+    Map training sites to their corresponding verticals based on the provided mapping
+    """
+    if pd.isna(training_site) or training_site == '' or str(training_site).lower() == 'none':
+        return 'Unknown'
+    
+    training_site = str(training_site).lower().strip()
+    
+    # Aviation
+    aviation_sites = ['delta', 'atl', 'dtw', 'lga', 'msp', 'boston logan airport']
+    if any(site in training_site for site in aviation_sites):
+        return 'Aviation'
+    
+    # Automotive
+    automotive_sites = ['ford', 'gm', 'tesla', 'honda', 'stellantis', 'leadec', 'ddc']
+    if any(site in training_site for site in automotive_sites):
+        return 'Automotive'
+    
+    # Distribution
+    distribution_sites = ['nike', 'p&g', 'procter & gamble']
+    if any(site in training_site for site in distribution_sites):
+        return 'Distribution'
+    
+    # Finance
+    finance_sites = ['wells fargo', 'state farm', 'fidelity', 'charles schwab', 't. rowe price', 
+                    'usaa', 'chubb', 'metlife', 'deutsche bank', 'cigna', 'elevance']
+    if any(site in training_site for site in finance_sites):
+        return 'Finance'
+    
+    # Manufacturing
+    manufacturing_sites = ['boeing', 'ge aerospace', '3m', 'ball corporation', 'dupont', 
+                          'westinghouse', 'lockheed martin', 'general dynamics', 'northrop grumman', 
+                          'textron']
+    if any(site in training_site for site in manufacturing_sites):
+        return 'Manufacturing'
+    
+    # Technology
+    tech_sites = ['google', 'uber', 'adobe', 'meta', 'microsoft', 'nvidia', 'juniper', 'amd', 
+                 'irg', 'snap', 'computershare', 'stripe', 'tgs mgmt', 'cpi satcom', 'softlayer', 
+                 'ntt', 'google fiber', 'google data centers', 'scale ai', 'hp', 'xerox', 
+                 'lam research', 'photronix', 'siltronics', 'intel', 'micron']
+    if any(site in training_site for site in tech_sites):
+        return 'Technology'
+    
+    # Life Science
+    life_science_sites = ['abbott', 'atara bio', 'capsida', 'medtronic', 'bio-rad', 'eli lilly', 
+                         'amgen', 'elanco', 'gilead', 'kite', 'avid bio', 'merck', 'cbre', 
+                         'bms', 'bristol myers squibb', 'novartis', 'abbvie', 'millipore sigma', 
+                         'bayer', 'johnson & johnson', 'biogen', 'genentech', 'lonza biologics', 
+                         'boehringer ingelheim', 'sanofi', 'takeda']
+    if any(site in training_site for site in life_science_sites):
+        return 'Life Science'
+    
+    # R&D / Education / Other
+    rd_sites = ['mars', 'ge healthcare', 'nestle']
+    if any(site in training_site for site in rd_sites):
+        return 'R&D / Education / Other'
+    
+    return 'Unknown'
+
+# Add vertical column to the dataframe
+df['Assigned Vertical'] = df['Training Site'].apply(get_vertical_from_training_site)
+
 # ---- MATCH SCORE ALGORITHM ----
 def calculate_match_score(candidate, job):
     """
@@ -164,30 +229,50 @@ def calculate_match_score(candidate, job):
         score += 5
     
     # 2. Location Proximity (30 points max)
-    # For now, we'll use a simple scoring system
-    # In the future, this could use actual distance calculations
-    candidate_location = str(candidate.get("Location", "")).lower()
-    job_city = str(job.get("City", "")).lower()
-    job_state = str(job.get("State", "")).lower()
+    # Improved location matching with better accuracy
+    candidate_location = str(candidate.get("Location", "")).lower().strip()
+    job_city = str(job.get("City", "")).lower().strip()
+    job_state = str(job.get("State", "")).lower().strip()
     
-    if job_city in candidate_location or job_state in candidate_location:
-        score += 30  # Same city/state
-    elif any(state in candidate_location for state in ["ca", "california", "ny", "new york", "tx", "texas"]):
-        if job_state in ["ca", "ny", "tx"]:
-            score += 20  # Major state match
+    # Extract state from candidate location
+    candidate_state = ""
+    if "," in candidate_location:
+        candidate_state = candidate_location.split(",")[-1].strip()
+    
+    # Exact city match
+    if job_city in candidate_location:
+        score += 30  # Same city
+    # Same state match
+    elif job_state == candidate_state and candidate_state != "":
+        score += 20  # Same state
+    # Major state proximity (within region)
+    elif any(state in candidate_location for state in ["ca", "california", "ny", "new york", "tx", "texas", "il", "illinois", "mn", "minnesota"]):
+        if job_state in ["ca", "ny", "tx", "il", "mn"]:
+            score += 15  # Major state match
         else:
-            score += 10  # Different state
+            score += 8  # Different major state
     else:
         score += 5  # No obvious location match
     
     # 3. Vertical/Industry Alignment (20 points max)
-    # This would need candidate preference data in the future
-    # For now, give a base score
+    # Use the assigned vertical from training site mapping
+    candidate_vertical = str(candidate.get("Assigned Vertical", "")).lower()
     job_vertical = str(job.get("Vertical", "")).lower()
-    if job_vertical in ["tech", "finance", "life science", "manufacturing"]:
-        score += 15  # Common verticals
+    
+    # Perfect vertical match
+    if candidate_vertical == job_vertical and candidate_vertical != "unknown":
+        score += 20  # Perfect match
+    # Related verticals (e.g., Technology and some Manufacturing)
+    elif (candidate_vertical == "technology" and job_vertical in ["tech", "manufacturing"]) or \
+         (candidate_vertical == "manufacturing" and job_vertical in ["tech", "manufacturing"]) or \
+         (candidate_vertical == "life science" and job_vertical in ["life science", "manufacturing"]) or \
+         (candidate_vertical == "finance" and job_vertical in ["finance", "tech"]):
+        score += 15  # Related verticals
+    # Common verticals get base score
+    elif job_vertical in ["tech", "finance", "life science", "manufacturing"]:
+        score += 10  # Common verticals
     else:
-        score += 10  # Other verticals
+        score += 5   # Other verticals
     
     # 4. Job Level Match (10 points max)
     candidate_weeks = candidate.get("Week", 0)
@@ -432,5 +517,14 @@ else:
 # ---- DATA TABLE ----
 st.markdown("---")
 st.markdown("### 📋 Full Combined Roster")
-st.dataframe(df, use_container_width=True)
-st.caption("Data source: combined_mit_data.csv")
+
+# Create a display dataframe with key columns including the new vertical
+display_columns = ['Mit Name', 'Week', 'Start Date', 'Training Site', 'Location', 'Status', 'Assigned Vertical', 'Readiness']
+available_columns = [col for col in display_columns if col in df.columns]
+
+if available_columns:
+    st.dataframe(df[available_columns], use_container_width=True)
+else:
+    st.dataframe(df, use_container_width=True)
+
+st.caption("Data source: combined_mit_data.csv | Verticals assigned based on training site mapping")
