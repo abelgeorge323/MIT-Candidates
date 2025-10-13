@@ -324,28 +324,55 @@ st.markdown('<div class="dashboard-title">🎓 MIT Candidate Training Dashboard<
 
 # ---- KEY METRICS ----
 total = len(df)
+
+# Buckets per your definitions
 ready = (df["Readiness"] == "Ready for Placement").sum()
-in_progress = (df["Readiness"] == "In Progress").sum()
-placed = (df["Readiness"] == "Placed at Training").sum()
-new = (df["Readiness"] == "New Start").sum()
+in_training = (df["Readiness"] == "In Progress").sum()  # Weeks 1–5
+placed_training = (df["Readiness"] == "Placed at Training").sum()
+new_starts = (df["Readiness"] == "New Start").sum()
+started_mit_training = int(placed_training + new_starts)  # grouped bucket
+
 open_jobs = len(jobs_df) if not jobs_df.empty else 0
 
 col1, col2, col3, col4, col5 = st.columns(5)
-col1.metric("Total Candidates", total)
-col2.metric("Ready for Placement", ready)
-col3.metric("In Progress", in_progress)
-col4.metric("Placed at Training", placed)
-col5.metric("Open Positions", open_jobs)
+
+# Executive-facing order: Total → Open Positions → Ready → In Training → Started
+col1.metric(
+    "Total Candidates",
+    total,
+    help="All candidates currently in the MIT program dataset"
+)
+col2.metric(
+    "Open Positions",
+    open_jobs,
+    help="Number of active openings available to place candidates"
+)
+col3.metric(
+    "Ready for Placement",
+    ready,
+    help="Candidates at Week ≥ 6 who are not already placed"
+)
+col4.metric(
+    "In Training (Weeks 1–5)",
+    in_training,
+    help="Candidates actively progressing through Weeks 1–5 of training"
+)
+col5.metric(
+    "Started MIT Training",
+    started_mit_training,
+    help="New Program Starts (Week 0) plus those placed at training sites"
+)
 
 # ---- VISUAL SECTION ----
 st.markdown("---")
 left_col, right_col = st.columns(2)
 
+# High-contrast, colorblind-friendly palette
 color_map = {
-    "Ready for Placement": "#00CC96",
-    "In Progress": "#FECB52",
-    "Placed at Training": "#636EFA",
-    "New Start": "#AB63FA"
+    "Ready for Placement": "#2E91E5",  # blue
+    "In Progress": "#E15F99",         # magenta
+    "Placed at Training": "#1CA71C",   # green
+    "New Start": "#FB0D0D"            # red
 }
 
 # Left side: open job positions
@@ -408,6 +435,12 @@ with right_col:
         margin=dict(l=0, r=0, t=30, b=30),
         showlegend=True,
     )
+    # Improve readability across devices
+    fig_pie.update_traces(
+        textposition="inside",
+        textinfo="percent+label",
+        marker=dict(line=dict(color="#0E1117", width=2))
+    )
     st.plotly_chart(fig_pie, use_container_width=True)
 
 # ---- QUICK INSIGHTS ----
@@ -427,10 +460,13 @@ newstart_names = get_names("New Start")
 st.markdown(f"""
 <div class="insights-box">
 <ul>
-    <li><b>{ready}</b> candidate(s) are ready for placement:<br><i>{ready_names or '—'}</i></li>
-    <li><b>{in_progress}</b> are actively progressing through training (1–5 weeks):<br><i>{inprog_names or '—'}</i></li>
-    <li><b>{placed}</b> have been placed at training sites:<br><i>{placed_names or '—'}</i></li>
-    <li><b>{new}</b> are new program starts:<br><i>{newstart_names or '—'}</i></li>
+    <li><b>{ready}</b> Ready for Placement (Week ≥ 6):<br><i>{ready_names or '—'}</i></li>
+    <li><b>{in_training}</b> In Training (Weeks 1–5):<br><i>{inprog_names or '—'}</i></li>
+    <li><b>{started_mit_training}</b> Started MIT Training (New Starts + Placed at Site)</li>
+    <ul>
+        <li><b>{new_starts}</b> New Program Starts:<br><i>{newstart_names or '—'}</i></li>
+        <li><b>{placed_training}</b> Placed at Training Sites:<br><i>{placed_names or '—'}</i></li>
+    </ul>
 </ul>
 </div>
 """, unsafe_allow_html=True)
