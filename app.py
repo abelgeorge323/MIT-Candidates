@@ -13,7 +13,7 @@ st.markdown("""
             color: white;
         }
         .dashboard-title {
-            font-size: 2.3rem;
+            font-size: clamp(1.6rem, 3.2vw, 2.3rem);
             font-weight: 700;
             color: white;
             background: linear-gradient(90deg, #6C63FF, #00B4DB);
@@ -28,6 +28,7 @@ st.markdown("""
             box-shadow: 0 0 12px rgba(108, 99, 255, 0.25);
             border-left: 6px solid #6C63FF;
             transition: 0.3s ease;
+            min-width: 220px;
         }
         div[data-testid="stMetric"]:hover {
             box-shadow: 0 0 25px rgba(108, 99, 255, 0.5);
@@ -35,12 +36,25 @@ st.markdown("""
         }
         div[data-testid="stMetricValue"] {
             color: white !important;
-            font-size: 30px !important;
+            font-size: clamp(22px, 2.2vw, 30px) !important;
             font-weight: bold !important;
         }
         div[data-testid="stMetricLabel"] {
-            color: #bbb !important;
-            font-size: 14px !important;
+            color: #E5E7EB !important; /* ensure light text on dark bg */
+            font-size: clamp(12px, 1.2vw, 14px) !important;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        div[data-testid="stMetricLabel"] * { color: #E5E7EB !important; }
+        div[data-testid="stMetricValue"] * { color: #FFFFFF !important; }
+        /* Help icon inside metrics */
+        div[data-testid="stMetric"] svg path { fill: #E5E7EB !important; }
+        @media (max-width: 1400px) {
+            div[data-testid="stMetric"] { min-width: 200px; padding: 18px 20px; }
+        }
+        @media (max-width: 1100px) {
+            div[data-testid="stMetric"] { min-width: 170px; padding: 16px 18px; }
         }
         h3, h4 {
             color: white !important;
@@ -365,7 +379,7 @@ col5.metric(
 
 # ---- VISUAL SECTION ----
 st.markdown("---")
-left_col, right_col = st.columns(2)
+left_col, right_col = st.columns([1.05, 0.95])
 
 # High-contrast, colorblind-friendly palette
 color_map = {
@@ -439,7 +453,8 @@ with right_col:
     fig_pie.update_traces(
         textposition="inside",
         textinfo="percent+label",
-        marker=dict(line=dict(color="#0E1117", width=2))
+        textfont=dict(color="#FFFFFF", size=14),
+        marker=dict(line=dict(color="#0B0F14", width=2))
     )
     st.plotly_chart(fig_pie, use_container_width=True)
 
