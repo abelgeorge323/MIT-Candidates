@@ -46,8 +46,18 @@ st.markdown("""
             overflow: hidden;
             text-overflow: ellipsis;
         }
-        div[data-testid="stMetricLabel"] * { color: #E5E7EB !important; }
-        div[data-testid="stMetricValue"] * { color: #FFFFFF !important; }
+        /* Force label/value color across browsers and themes */
+        div[data-testid="stMetricLabel"],
+        div[data-testid="stMetricLabel"] *,
+        div[data-testid="stMetricValue"],
+        div[data-testid="stMetricValue"] * {
+            color: #F3F4F6 !important;
+            -webkit-text-fill-color: #F3F4F6 !important;
+            mix-blend-mode: normal !important;
+            opacity: 1 !important;
+        }
+        div[data-testid="stMetricValue"],
+        div[data-testid="stMetricValue"] * { color: #FFFFFF !important; -webkit-text-fill-color: #FFFFFF !important; }
         /* Help icon inside metrics */
         div[data-testid="stMetric"] svg path { fill: #E5E7EB !important; }
         @media (max-width: 1400px) {
