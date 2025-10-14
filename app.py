@@ -3,14 +3,37 @@ import streamlit as st
 import plotly.express as px
 
 # ---- PAGE CONFIG ----
-st.set_page_config(page_title="MIT Candidate Training Dashboard", layout="wide")
+st.set_page_config(
+    page_title="MIT Candidate Training Dashboard", 
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
 
 # ---- CUSTOM STYLING ----
 st.markdown("""
     <style>
+        /* Force dark mode globally */
+        :root {
+            color-scheme: dark;
+        }
+        html, body, [data-testid="stApp"], [data-testid="stAppViewContainer"] {
+            background-color: #0E1117 !important;
+            color: #FAFAFA !important;
+        }
+        /* Prevent light mode flashing */
+        * {
+            color-scheme: dark !important;
+        }
         [data-testid="stAppViewContainer"] {
             background-color: #0E1117;
             color: white;
+        }
+        section[data-testid="stSidebar"] {
+            background-color: #1E1E1E !important;
+        }
+        /* Force all text elements to light color */
+        p, span, div, label, h1, h2, h3, h4, h5, h6 {
+            color: #FAFAFA !important;
         }
         .dashboard-title {
             font-size: clamp(1.6rem, 3.2vw, 2.3rem);
