@@ -118,7 +118,7 @@ def load_data():
     from datetime import datetime, timedelta
     
     # Read from new single source of truth
-    df = pd.read_excel("MIT Tracking for Placement (2).xlsx", skiprows=4)
+    df = pd.read_excel("MIT Tracking for Placement (3).xlsx", skiprows=4)
     
     # Remove completely empty rows and header rows
     df = df.dropna(how='all')
@@ -146,10 +146,10 @@ def load_data():
             weeks_until = days_until / 7
             return f"-{int(weeks_until)} weeks from start"
         else:
-            # Already started
+            # Already started - calculate week number (first 7 days = Week 1)
             days_since = (today - start).days
-            weeks_since = days_since / 7
-            return int(weeks_since)  # Round down
+            week_number = (days_since // 7) + 1
+            return int(week_number)
     
     df['Week'] = df.apply(calculate_weeks, axis=1)
     
@@ -226,7 +226,7 @@ def load_jobs_data():
     """Load open job positions from Placement Options sheet"""
     try:
         # Read from Placement Options sheet, starting from row 5
-        jobs_df = pd.read_excel("MIT Tracking for Placement (2).xlsx", sheet_name="Placement Options", skiprows=4)
+        jobs_df = pd.read_excel("MIT Tracking for Placement (3).xlsx", sheet_name="Placement Options", skiprows=4)
         
         # Clean up the data - first row contains headers
         if len(jobs_df) > 0:
@@ -690,4 +690,4 @@ display_df['Salary'] = display_df['Salary'].apply(
 display_df['Start Date'] = pd.to_datetime(display_df['Start Date']).dt.strftime('%m/%d/%Y')
 
 st.dataframe(display_df, use_container_width=True, hide_index=True)
-st.caption("Data source: MIT Tracking for Placement (2).xlsx | Weeks calculated dynamically from start date")
+st.caption("Data source: MIT Tracking for Placement (3).xlsx | Weeks calculated dynamically from start date")
