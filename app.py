@@ -223,10 +223,10 @@ def load_data():
 
 @st.cache_data
 def load_jobs_data():
-    """Load open job positions from Excel file"""
+    """Load open job positions from Placement Options sheet"""
     try:
-        # Read the Excel file, starting from row 21 (index 20)
-        jobs_df = pd.read_excel("MITs.xlsx", skiprows=20)
+        # Read from Placement Options sheet, starting from row 5
+        jobs_df = pd.read_excel("MIT Tracking for Placement (2).xlsx", sheet_name="Placement Options", skiprows=4)
         
         # Clean up the data - first row contains headers
         if len(jobs_df) > 0:
@@ -245,13 +245,28 @@ def load_jobs_data():
                 jobs_df = jobs_df.dropna(subset=['Job Title'])
                 jobs_df = jobs_df[jobs_df['Job Title'].str.strip() != '']
             
-            # Only keep rows that have valid JV ID (to filter out header rows and invalid data)
+            # Only keep rows that have valid JV ID
             if 'JV ID' in jobs_df.columns:
                 jobs_df = jobs_df.dropna(subset=['JV ID'])
-                # Convert JV ID to numeric and keep only valid numbers
                 jobs_df['JV ID'] = pd.to_numeric(jobs_df['JV ID'], errors='coerce')
                 jobs_df = jobs_df.dropna(subset=['JV ID'])
             
+            # Map VERT codes to full names for jobs
+            vertical_map = {
+                'MANU': 'Manufacturing',
+                'AUTO': 'Automotive',
+                'FIN': 'Finance',
+                'TECH': 'Technology',
+                'AVI': 'Aviation',
+                'DIST': 'Distribution',
+                'RD': 'R&D',
+                'LIFSC': 'Life Science',
+                'Reg & Div': 'Regulatory & Division'
+            }
+            if 'VERT' in jobs_df.columns:
+                jobs_df['Vertical'] = jobs_df['VERT'].map(vertical_map).fillna(jobs_df['VERT'])
+            
+            # Keep salary range as-is for display
             # Fill NaN values with empty strings for display
             jobs_df = jobs_df.fillna('')
             
@@ -398,7 +413,7 @@ def get_candidate_match_scores(candidates_df, jobs_df):
         # Sort by match score (highest first)
         candidate_scores.sort(key=lambda x: x['Match Score'], reverse=True)
         match_scores.append({
-            'Candidate': candidate.get('Mit Name', 'Unknown'),
+            'Candidate': candidate.get('MIT Name', 'Unknown'),
             'Readiness': candidate.get('Readiness', 'Unknown'),
             'Week': candidate.get('Week', 0),
             'Top Matches': candidate_scores[:3]  # Top 3 matches
@@ -482,8 +497,8 @@ with left_col:
                 axis=1
             )
             
-            # Show clean columns
-            clean_columns = ['Position', 'Location', 'Vertical', 'Notes']
+            # Show clean columns including salary
+            clean_columns = ['Position', 'Location', 'Vertical', 'Salary']
             available_columns = [col for col in clean_columns if col in display_jobs.columns]
             
             if available_columns:
@@ -603,10 +618,10 @@ if not jobs_df.empty and ready > 0:
     with col2:
         st.subheader("💼 Available Positions")
         if 'Job Title' in jobs_df.columns and 'Account' in jobs_df.columns:
-            position_display = jobs_df[['Job Title', 'Account', 'City', 'State', 'Vertical']].copy()
+            position_display = jobs_df[['Job Title', 'Account', 'City', 'State', 'Vertical', 'Salary']].copy()
             # Remove empty rows
             position_display = position_display.dropna(how='all')
-            st.dataframe(position_display, use_container_width=True, height=300)
+            st.dataframe(position_display, use_container_width=True, height=300, hide_index=True)
         else:
             st.dataframe(jobs_df, use_container_width=True, height=300)
     
