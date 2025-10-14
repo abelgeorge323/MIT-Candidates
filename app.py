@@ -115,30 +115,110 @@ st.markdown("""
 # ---- LOAD DATA ----
 @st.cache_data
 def load_data():
-    df = pd.read_csv("combined_mit_data.csv")
-    df.columns = [c.strip().title() for c in df.columns]
-
-    if "Week" in df.columns:
-        df["Week"] = pd.to_numeric(df["Week"], errors="coerce").fillna(0).astype(int)
-
-    if "Start Date" in df.columns:
-        df["Start Date"] = pd.to_datetime(df["Start Date"], errors="coerce").dt.strftime("%m/%d/%Y")
-
-    def infer_readiness(row):
-        w = row.get("Week", 0)
-        status = str(row.get("Status", "")).lower()
-        src = str(row.get("Source", "")).lower()
-
-        if "offer accepted" in status or "placed" in src:
-            return "Placed at Training"
-        elif w >= 6:
-            return "Ready for Placement"
-        elif 1 <= w < 6:
-            return "In Progress"
+    from datetime import datetime, timedelta
+    
+    # Read from new single source of truth
+    df = pd.read_excel("MIT Tracking for Placement (2).xlsx", skiprows=4)
+    
+    # Remove completely empty rows and header rows
+    df = df.dropna(how='all')
+    df = df[df['MIT Name'].notna()]
+    df = df[df['MIT Name'] != 'MIT Name']  # Remove duplicate headers
+    df = df[df['MIT Name'] != 'New Candidate Name']  # Remove template rows
+    
+    # Clean column names
+    df.columns = [c.strip() if isinstance(c, str) else c for c in df.columns]
+    df = df.rename(columns={'Week ': 'Week'})  # Fix trailing space
+    
+    # Convert Start date to datetime
+    df['Start Date'] = pd.to_datetime(df['Start date'], errors='coerce')
+    
+    # Calculate weeks dynamically from start date to today
+    today = pd.Timestamp.now()
+    
+    def calculate_weeks(row):
+        start = row['Start Date']
+        if pd.isna(start):
+            return None
+        if start > today:
+            # Future start date
+            days_until = (start - today).days
+            weeks_until = days_until / 7
+            return f"-{int(weeks_until)} weeks from start"
         else:
-            return "New Start"
-
-    df["Readiness"] = df.apply(infer_readiness, axis=1)
+            # Already started
+            days_since = (today - start).days
+            weeks_since = days_since / 7
+            return int(weeks_since)  # Round down
+    
+    df['Week'] = df.apply(calculate_weeks, axis=1)
+    
+    # Map vertical codes to full names
+    vertical_map = {
+        'MANU': 'Manufacturing',
+        'AUTO': 'Automotive',
+        'FIN': 'Finance',
+        'TECH': 'Technology',
+        'AVI': 'Aviation',
+        'DIST': 'Distribution',
+        'RD': 'R&D',
+        'Reg & Div': 'Regulatory & Division'
+    }
+    df['Vertical Full'] = df['VERT'].map(vertical_map).fillna(df['VERT'])
+    
+    # Convert salary to numeric
+    df['Salary'] = pd.to_numeric(df['Salary'], errors='coerce')
+    
+    # Map Status to Readiness categories
+    def infer_readiness(row):
+        status = str(row.get('Status', '')).strip()
+        week = row.get('Week', None)
+        
+        # Exclude "Position Identified" from dashboard
+        if status == 'Position Identified':
+            return 'Position Identified'  # We'll filter these out
+        
+        # Offer Pending - special category
+        if status == 'Offer Pending':
+            return 'Offer Pending'
+        
+        # Offer Accepted -> Started MIT Training
+        if status == 'Offer Accepted':
+            return 'Started MIT Training'
+        
+        # Training status
+        if status == 'Training':
+            if isinstance(week, int):
+                if week >= 6:
+                    return 'Ready for Placement'
+                elif week >= 1:
+                    return 'In Training'
+                else:
+                    return 'Started MIT Training'
+            else:
+                return 'Started MIT Training'
+        
+        # Future start dates
+        if isinstance(week, str) and 'from start' in week:
+            return 'Starting MIT Training'
+        
+        # Week-based classification for other statuses
+        if isinstance(week, int):
+            if week >= 6:
+                return 'Ready for Placement'
+            elif week >= 1:
+                return 'In Training'
+            else:
+                return 'Started MIT Training'
+        
+        # Default
+        return 'Started MIT Training'
+    
+    df['Readiness'] = df.apply(infer_readiness, axis=1)
+    
+    # Filter out "Position Identified" candidates
+    df = df[df['Readiness'] != 'Position Identified']
+    
     return df
 
 @st.cache_data
@@ -183,70 +263,8 @@ def load_jobs_data():
 df = load_data()
 jobs_df = load_jobs_data()
 
-# ---- VERTICAL MAPPING FUNCTION ----
-def get_vertical_from_training_site(training_site):
-    """
-    Map training sites to their corresponding verticals based on the provided mapping
-    """
-    if pd.isna(training_site) or training_site == '' or str(training_site).lower() == 'none':
-        return 'Unknown'
-    
-    training_site = str(training_site).lower().strip()
-    
-    # Aviation
-    aviation_sites = ['delta', 'atl', 'dtw', 'lga', 'msp', 'boston logan airport']
-    if any(site in training_site for site in aviation_sites):
-        return 'Aviation'
-    
-    # Automotive
-    automotive_sites = ['ford', 'gm', 'tesla', 'honda', 'stellantis', 'leadec', 'ddc']
-    if any(site in training_site for site in automotive_sites):
-        return 'Automotive'
-    
-    # Distribution
-    distribution_sites = ['nike', 'p&g', 'procter & gamble']
-    if any(site in training_site for site in distribution_sites):
-        return 'Distribution'
-    
-    # Finance
-    finance_sites = ['wells fargo', 'state farm', 'fidelity', 'charles schwab', 't. rowe price', 
-                    'usaa', 'chubb', 'metlife', 'deutsche bank', 'cigna', 'elevance']
-    if any(site in training_site for site in finance_sites):
-        return 'Finance'
-    
-    # Manufacturing
-    manufacturing_sites = ['boeing', 'ge aerospace', '3m', 'ball corporation', 'dupont', 
-                          'westinghouse', 'lockheed martin', 'general dynamics', 'northrop grumman', 
-                          'textron']
-    if any(site in training_site for site in manufacturing_sites):
-        return 'Manufacturing'
-    
-    # Technology
-    tech_sites = ['google', 'uber', 'adobe', 'meta', 'microsoft', 'nvidia', 'juniper', 'amd', 
-                 'irg', 'snap', 'computershare', 'stripe', 'tgs mgmt', 'cpi satcom', 'softlayer', 
-                 'ntt', 'google fiber', 'google data centers', 'scale ai', 'hp', 'xerox', 
-                 'lam research', 'photronix', 'siltronics', 'intel', 'micron']
-    if any(site in training_site for site in tech_sites):
-        return 'Technology'
-    
-    # Life Science
-    life_science_sites = ['abbott', 'atara bio', 'capsida', 'medtronic', 'bio-rad', 'eli lilly', 
-                         'amgen', 'elanco', 'gilead', 'kite', 'avid bio', 'merck', 'cbre', 
-                         'bms', 'bristol myers squibb', 'novartis', 'abbvie', 'millipore sigma', 
-                         'bayer', 'johnson & johnson', 'biogen', 'genentech', 'lonza biologics', 
-                         'boehringer ingelheim', 'sanofi', 'takeda']
-    if any(site in training_site for site in life_science_sites):
-        return 'Life Science'
-    
-    # R&D / Education / Other
-    rd_sites = ['mars', 'ge healthcare', 'nestle']
-    if any(site in training_site for site in rd_sites):
-        return 'R&D / Education / Other'
-    
-    return 'Unknown'
-
-# Add vertical column to the dataframe
-df['Assigned Vertical'] = df['Training Site'].apply(get_vertical_from_training_site)
+# Verticals are now directly in the data as 'Vertical Full'
+# No need for mapping function
 
 # ---- MATCH SCORE ALGORITHM ----
 def calculate_match_score(candidate, job):
@@ -259,20 +277,26 @@ def calculate_match_score(candidate, job):
     
     # 1. Candidate Readiness (40 points max)
     readiness = candidate.get("Readiness", "")
+    week = candidate.get("Week", 0)
+    
+    # Handle Week being either int or string
+    week_int = week if isinstance(week, int) else 0
+    
     if readiness == "Ready for Placement":
         score += 40
-    elif readiness == "In Progress":
-        # Partial score based on weeks completed
-        weeks = candidate.get("Week", 0)
-        if weeks >= 4:
+    elif readiness == "In Training":
+        # Partial score based on weeks completed (1-5)
+        if week_int >= 4:
             score += 30
-        elif weeks >= 2:
+        elif week_int >= 2:
             score += 20
         else:
             score += 10
-    elif readiness == "Placed at Training":
-        score += 0  # Already placed
-    else:  # New Start
+    elif readiness == "Offer Pending":
+        score += 0  # Don't score offer pending
+    elif readiness == "Started MIT Training" or readiness == "Starting MIT Training":
+        score += 5  # Just starting
+    else:
         score += 5
     
     # 2. Location Proximity (30 points max)
@@ -301,37 +325,53 @@ def calculate_match_score(candidate, job):
     else:
         score += 5  # No obvious location match
     
-    # 3. Vertical/Industry Alignment (20 points max)
-    # Use the assigned vertical from training site mapping
-    candidate_vertical = str(candidate.get("Assigned Vertical", "")).lower()
+    # 3. Vertical/Industry Alignment (15 points max - reduced to make room for salary)
+    # Use the vertical from new data
+    candidate_vertical = str(candidate.get("Vertical Full", "")).lower()
     job_vertical = str(job.get("Vertical", "")).lower()
     
     # Perfect vertical match
     if candidate_vertical == job_vertical and candidate_vertical != "unknown":
-        score += 20  # Perfect match
+        score += 15  # Perfect match
     # Related verticals (e.g., Technology and some Manufacturing)
     elif (candidate_vertical == "technology" and job_vertical in ["tech", "manufacturing"]) or \
          (candidate_vertical == "manufacturing" and job_vertical in ["tech", "manufacturing"]) or \
          (candidate_vertical == "life science" and job_vertical in ["life science", "manufacturing"]) or \
          (candidate_vertical == "finance" and job_vertical in ["finance", "tech"]):
-        score += 15  # Related verticals
+        score += 12  # Related verticals
     # Common verticals get base score
     elif job_vertical in ["tech", "finance", "life science", "manufacturing"]:
-        score += 10  # Common verticals
+        score += 8  # Common verticals
     else:
-        score += 5   # Other verticals
+        score += 4   # Other verticals
+    
+    # 3b. Salary Alignment (15 points max - NEW)
+    candidate_salary = candidate.get("Salary", None)
+    job_salary = job.get("Salary Range", None)  # If jobs have salary data
+    
+    if pd.notna(candidate_salary) and candidate_salary > 0:
+        # For now, give points based on having salary data
+        # Later we can add job salary ranges for better matching
+        score += 10  # Has salary expectations documented
+        
+        # Bonus points for competitive salary expectations
+        if candidate_salary >= 70000:
+            score += 5  # Higher salary candidates may be more experienced
+        else:
+            score += 3  # Entry-level salary range
+    else:
+        score += 3  # No salary data - neutral score
     
     # 4. Job Level Match (10 points max)
-    candidate_weeks = candidate.get("Week", 0)
     job_title = str(job.get("Job Title", "")).lower()
     
     if "sr." in job_title or "senior" in job_title:
-        if candidate_weeks >= 8:
+        if week_int >= 8:
             score += 10  # Senior role for experienced candidate
         else:
             score += 5   # Senior role for less experienced
     else:
-        if candidate_weeks >= 6:
+        if week_int >= 6:
             score += 10  # Regular role for ready candidate
         else:
             score += 7   # Regular role for developing candidate
@@ -372,12 +412,13 @@ st.markdown('<div class="dashboard-title">🎓 MIT Candidate Training Dashboard<
 # ---- KEY METRICS ----
 total = len(df)
 
-# Buckets per your definitions
+# Buckets per new data structure
 ready = (df["Readiness"] == "Ready for Placement").sum()
-in_training = (df["Readiness"] == "In Progress").sum()  # Weeks 1–5
-placed_training = (df["Readiness"] == "Placed at Training").sum()
-new_starts = (df["Readiness"] == "New Start").sum()
-started_mit_training = int(placed_training + new_starts)  # grouped bucket
+in_training = (df["Readiness"] == "In Training").sum()  # Weeks 1–5
+started_training = (df["Readiness"] == "Started MIT Training").sum()
+starting_training = (df["Readiness"] == "Starting MIT Training").sum()
+offer_pending = (df["Readiness"] == "Offer Pending").sum()
+started_mit_training = int(started_training + starting_training)  # grouped bucket
 
 open_jobs = len(jobs_df) if not jobs_df.empty else 0
 
@@ -416,10 +457,11 @@ left_col, right_col = st.columns([1.05, 0.95])
 
 # High-contrast, colorblind-friendly palette
 color_map = {
-    "Ready for Placement": "#2E91E5",  # blue
-    "In Progress": "#E15F99",         # magenta
-    "Placed at Training": "#1CA71C",   # green
-    "New Start": "#FB0D0D"            # red
+    "Ready for Placement": "#2E91E5",      # blue
+    "In Training": "#E15F99",              # magenta
+    "Started MIT Training": "#1CA71C",     # green
+    "Starting MIT Training": "#FBB13C",    # orange
+    "Offer Pending": "#A020F0"             # purple
 }
 
 # Left side: open job positions
@@ -497,29 +539,44 @@ st.markdown("<h3>🧠 Quick Insights</h3>", unsafe_allow_html=True)
 
 # Helper to list names by readiness category
 def get_names(stage):
-    # Column is "Mit Name" because you title-cased headers earlier
-    return ", ".join(df.loc[df["Readiness"] == stage, "Mit Name"].dropna().tolist())
+    return ", ".join(df.loc[df["Readiness"] == stage, "MIT Name"].dropna().tolist())
 
-ready_names    = get_names("Ready for Placement")
-inprog_names   = get_names("In Progress")
-placed_names   = get_names("Placed at Training")
-newstart_names = get_names("New Start")
+ready_names      = get_names("Ready for Placement")
+inprog_names     = get_names("In Training")
+started_names    = get_names("Started MIT Training")
+starting_names   = get_names("Starting MIT Training")
 
 st.markdown(f"""
 <div class="insights-box">
 <ul>
     <li><b>{ready}</b> Ready for Placement (Week ≥ 6):<br><i>{ready_names or '—'}</i></li>
     <li><b>{in_training}</b> In Training (Weeks 1–5):<br><i>{inprog_names or '—'}</i></li>
-    <li><b>{started_mit_training}</b> Started MIT Training (New Starts + Placed at Site)</li>
+    <li><b>{started_mit_training}</b> Started MIT Training</li>
     <ul>
-        <li><b>{new_starts}</b> New Program Starts:<br><i>{newstart_names or '—'}</i></li>
-        <li><b>{placed_training}</b> Placed at Training Sites:<br><i>{placed_names or '—'}</i></li>
+        <li><b>{started_training}</b> Currently in Training:<br><i>{started_names or '—'}</i></li>
+        <li><b>{starting_training}</b> Starting Soon:<br><i>{starting_names or '—'}</i></li>
     </ul>
 </ul>
 </div>
 """, unsafe_allow_html=True)
 
 
+
+# ---- OFFER PENDING SECTION ----
+if offer_pending > 0:
+    st.markdown("---")
+    st.markdown("### 🤝 Offer Pending Candidates")
+    
+    offer_pending_df = df[df["Readiness"] == "Offer Pending"]
+    offer_pending_display = offer_pending_df[['MIT Name', 'Training Site', 'Location', 'Salary', 'Level', 'Notes']].copy()
+    
+    # Format salary
+    offer_pending_display['Salary'] = offer_pending_display['Salary'].apply(
+        lambda x: f"${x:,.0f}" if pd.notna(x) else "TBD"
+    )
+    
+    st.dataframe(offer_pending_display, use_container_width=True, hide_index=True)
+    st.caption(f"{offer_pending} candidates with pending offers - awaiting final approval/acceptance")
 
 # ---- CANDIDATE-JOB MATCHING SECTION ----
 st.markdown("---")
@@ -534,8 +591,12 @@ if not jobs_df.empty and ready > 0:
     with col1:
         st.subheader("👥 Ready Candidates")
         if not ready_candidates.empty:
-            candidate_display = ready_candidates[['Mit Name', 'Week', 'Start Date']].copy() if 'Mit Name' in ready_candidates.columns else ready_candidates
-            st.dataframe(candidate_display, use_container_width=True, height=300)
+            candidate_display = ready_candidates[['MIT Name', 'Week', 'Location', 'Vertical Full', 'Salary']].copy()
+            # Format salary
+            candidate_display['Salary'] = candidate_display['Salary'].apply(
+                lambda x: f"${x:,.0f}" if pd.notna(x) else "TBD"
+            )
+            st.dataframe(candidate_display, use_container_width=True, height=300, hide_index=True)
         else:
             st.info("No candidates ready for placement")
     
@@ -600,15 +661,18 @@ else:
 
 # ---- DATA TABLE ----
 st.markdown("---")
-st.markdown("### 📋 Full Combined Roster")
+st.markdown("### 📋 Full MIT Roster")
 
-# Create a display dataframe with key columns including the new vertical
-display_columns = ['Mit Name', 'Week', 'Start Date', 'Training Site', 'Location', 'Status', 'Assigned Vertical', 'Readiness']
-available_columns = [col for col in display_columns if col in df.columns]
+# Create a display dataframe with key columns from new data
+display_df = df[['MIT Name', 'Week', 'Start Date', 'Training Site', 'Location', 'Vertical Full', 'Salary', 'Level', 'Status', 'Readiness']].copy()
 
-if available_columns:
-    st.dataframe(df[available_columns], use_container_width=True)
-else:
-    st.dataframe(df, use_container_width=True)
+# Format salary column for display
+display_df['Salary'] = display_df['Salary'].apply(
+    lambda x: f"${x:,.0f}" if pd.notna(x) else "—"
+)
 
-st.caption("Data source: combined_mit_data.csv | Verticals assigned based on training site mapping")
+# Format Start Date
+display_df['Start Date'] = pd.to_datetime(display_df['Start Date']).dt.strftime('%m/%d/%Y')
+
+st.dataframe(display_df, use_container_width=True, hide_index=True)
+st.caption("Data source: MIT Tracking for Placement (2).xlsx | Weeks calculated dynamically from start date")
