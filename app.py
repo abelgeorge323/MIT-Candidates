@@ -208,8 +208,8 @@ st.markdown("""
 def load_data():
     main_data_url = (
         "https://docs.google.com/spreadsheets/d/e/"
-        "2PACX-1vSbD6wUrZEt9kuSQpUT2pw0FMOb7h1y8xeX-hDTeiiZUPjtV0ohK_WcFtCSt_4nuxdtn9zqFS8z8aGw/"
-        "pub?gid=1155015355&single=true&output=csv"
+        "2PACX-1vTAdbdhuieyA-axzb4aLe8c7zdAYXBLPNrIxKRder6j1ZAlj2g4U1k0YzkZbm_dEcSwBik4CJ57FROJ/"
+        "pub?gid=813046237&single=true&output=csv"
     )
     try:
         df = pd.read_csv(main_data_url, skiprows=4)
