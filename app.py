@@ -204,7 +204,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ---- LOAD DATA ----
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)  # Reduced from 300 to 60 seconds for faster updates
 def load_data():
     main_data_url = (
         "https://docs.google.com/spreadsheets/d/e/"
@@ -226,16 +226,35 @@ def load_data():
 
     today = pd.Timestamp.now()
 
-    def calc_weeks(row):
-        start = row["Start Date"]
-        if pd.isna(start):
-            return None
-        if start > today:
-            return f"-{int((start - today).days / 7)} weeks from start"
-        return int(((today - start).days // 7) + 1)
+    # Use Week from Google Sheet if available, otherwise calculate
+    if "Week" in df.columns:
+        # Convert Week column to numeric, keeping original values from sheet
+        df["Week"] = pd.to_numeric(df["Week"], errors="coerce")
+        # Only calculate for rows where Week is NaN or invalid
+        mask = df["Week"].isna()
+        if mask.any():
+            def calc_weeks(row):
+                start = row["Start Date"]
+                if pd.isna(start):
+                    return None
+                if start > today:
+                    return f"-{int((start - today).days / 7)} weeks from start"
+                return int(((today - start).days // 7) + 1)
+            
+            df.loc[mask, "Week"] = df.loc[mask].apply(calc_weeks, axis=1)
+            df["Week"] = pd.to_numeric(df["Week"], errors="coerce")
+    else:
+        # Fallback to calculation if Week column doesn't exist
+        def calc_weeks(row):
+            start = row["Start Date"]
+            if pd.isna(start):
+                return None
+            if start > today:
+                return f"-{int((start - today).days / 7)} weeks from start"
+            return int(((today - start).days // 7) + 1)
 
-    df["Week"] = df.apply(calc_weeks, axis=1)
-    df["Week"] = pd.to_numeric(df["Week"], errors="coerce")
+        df["Week"] = df.apply(calc_weeks, axis=1)
+        df["Week"] = pd.to_numeric(df["Week"], errors="coerce")
 
 
     if "Salary" in df.columns:
@@ -252,7 +271,7 @@ def load_data():
     return df, data_source
 
 
-@st.cache_data(ttl=300)
+@st.cache_data(ttl=60)  # Reduced from 300 to 60 seconds for faster updates
 def load_jobs_data():
     # ✅ Your real Open Jobs Google Sheets URL
     jobs_url = (
@@ -281,6 +300,14 @@ if df.empty:
 
 # ---- HEADER ----
 st.markdown('<div class="dashboard-title">🎓 MIT Candidate Training Dashboard</div>', unsafe_allow_html=True)
+
+# Add refresh button
+col1, col2, col3 = st.columns([1, 2, 1])
+with col2:
+    if st.button("🔄 Refresh Data", help="Click to force refresh data from Google Sheets"):
+        st.cache_data.clear()
+        st.rerun()
+
 if data_source == "Google Sheets":
     st.success(f"📊 Data Source: {data_source} | Last Updated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
@@ -297,7 +324,7 @@ ready_for_placement = df[
 ready = len(ready_for_placement)
 
 in_training = len(
-    df[df["Status"].eq("training") & df["Week"].apply(lambda x: isinstance(x, (int, float)) and x <= 6)]
+    df[df["Status"].eq("training") & df["Week"].apply(lambda x: isinstance(x, (int, float)) and x <= 6 and x >= 0)]
 )
 open_jobs = len(jobs_df) if not jobs_df.empty else 0
 
@@ -305,7 +332,7 @@ col1, col2, col3, col4, col5 = st.columns(5)
 col1.metric("Total Candidates", total_candidates)
 col2.metric("Open Positions", open_jobs)
 col3.metric("Ready for Placement", ready)
-col4.metric("In Training (Weeks 1–5)", in_training)
+col4.metric("In Training (Weeks 0–6)", in_training)
 col5.metric("Offer Pending", offer_pending)
 
 # ---- CHART ----
@@ -388,12 +415,12 @@ else:
 # ==========================================================
 in_training_df = df[
     df["Status"].eq("training")
-    & df["Week"].apply(lambda x: isinstance(x, (int, float)) and x <= 6)
+    & df["Week"].apply(lambda x: isinstance(x, (int, float)) and x <= 6 and x >= 0)
 ]
 
 if not in_training_df.empty:
     st.markdown("---")
-    st.markdown("### 🏋️ In Training (Weeks 1–5)")
+    st.markdown("### 🏋️ In Training (Weeks 0–6)")
 
     train_cols = [col for col in ["MIT Name", "Training Site", "Location", "Week", "Salary", "Level"] if col in in_training_df.columns]
     train_display = in_training_df[train_cols].copy().fillna("—")
@@ -409,7 +436,7 @@ if not in_training_df.empty:
         hide_index=True,
         height=(len(train_display) * 35 + 60),
     )
-    st.caption(f"{len(train_display)} candidates currently in training (weeks 1–5).")
+    st.caption(f"{len(train_display)} candidates currently in training (weeks 0–6).")
 else:
     st.markdown('<div class="placeholder-box">No candidates currently in training</div>', unsafe_allow_html=True)
 
